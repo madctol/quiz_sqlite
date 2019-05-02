@@ -16,9 +16,14 @@
   "author": "Miguel Ángel",
   "license": "Unlicense",
   "dependencies": {
-    "chalk": "^2.3.0",
-    "figlet": "^1.2.0",
-    "sequelize": "^4.35.2",
-    "sqlite3": "^3.1.13"
+    "archiver": "^3.0.0",
+    "chai": "^4.1.2",
+    "chalk": "^2.4.2",
+    "figlet": "^1.2.1",
+    "fs-extra": "^6.0.1",
+    "mocha": "^5.2.0",
+    "sequelize": "^4.43.1",
+    "sqlite3": "^4.0.6",
+    "underscore": "^1.8.3"
   }
 }

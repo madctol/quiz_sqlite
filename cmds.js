@@ -4,7 +4,7 @@ const Sequelize = require('sequelize');
 
 const {log, biglog, errorlog, colorize} = require("./out");
 
-const {models} = require('./model');
+const quizModel = require('./model.js').models.quiz;
 
 
 /**
@@ -34,9 +34,9 @@ exports.helpCmd = rl => {
  * @param rl Objeto readline usado para implementar el CLI.
  */
 exports.listCmd = rl => {
-    models.quiz.findAll()
+    quizModel.findAll()
     .each(quiz => {
-        log(`${colorize(quiz.id,'magenta')}]: ${quiz.question}`);
+        log(`[${colorize(quiz.id,'magenta')}]: ${quiz.question}`);
     })
     .catch(error => {
         errorlog(error.message);
@@ -80,7 +80,7 @@ const validateId = id => {
  */
 exports.showCmd = (rl, id) => {
     validateId(id)
-    .then(id => models.quiz.findById(id))
+    .then(id => quizModel.findByPk(id))
     .then(quiz => {
         if (!quiz) {
             throw new Error(`No existe un quiz asociado al id=${id}.`);
@@ -109,7 +109,7 @@ exports.showCmd = (rl, id) => {
 const makeQuestion = (rl, text) => {
 
     return new Sequelize.Promise((resolve, reject) => {
-        rl.question(colorize(text, 'red'), answer => {
+        rl.question(colorize(text, 'red') , answer => {
             resolve(answer.trim());
         });
     });
@@ -136,10 +136,10 @@ exports.addCmd = rl => {
         });
     })
     .then(quiz => {
-        return models.quiz.create(quiz);
+        return quizModel.create(quiz);
     })
     .then((quiz) => {
-        log(` ${colorize('Se ha añadido', 'magenta')}: ${question} ${colorize('=>', 'magenta')} ${answer}`);
+        log(` ${colorize('Se ha añadido', 'magenta')}: ${quiz.question} ${colorize('=>', 'magenta')} ${quiz.answer}`);
     })
     .catch(Sequelize.ValidationError, error => {
         errorlog('El quiz es erroneo:');
@@ -162,7 +162,7 @@ exports.addCmd = rl => {
  */
 exports.deleteCmd = (rl, id) => {
     validateId(id)
-    .then(id => models.quiz.destroy({where: {id}}))
+    .then(id => quizModel.destroy({where: {id}}))
     .catch(error => {
         errorlog(error.message);
     })
@@ -185,7 +185,7 @@ exports.deleteCmd = (rl, id) => {
  */
 exports.editCmd = (rl, id) => {
     validateId(id)
-    .then(id => models.quiz.findById(id))
+    .then(id => quizModel.findByPk(id))
     .then(quiz => {
         if (!quiz) {
             throw new Error(`No existe un quiz asociado al id=${id}.`);
@@ -194,7 +194,7 @@ exports.editCmd = (rl, id) => {
         process.stdout.isTTY && setTimeout(() => {rl.write(quiz.question)}, 0);
         return makeQuestion(rl, ' Introduzca la pregunta: ')
         .then(q => {
-            process.stdout.isTTY && setTimeout(() => {rl.write(quiz.question)}, 0);
+            process.stdout.isTTY && setTimeout(() => {rl.write(quiz.answer)}, 0);
             return makeQuestion(rl, ' Introduzca la respuesta: ')
             .then(a => {
                 quiz.question = q;
@@ -207,7 +207,7 @@ exports.editCmd = (rl, id) => {
         return quiz.save();
     })
     .then(quiz => {
-        log(` Se ha cambiado el quiz ${colorize(id, 'magenta')} por: ${question} ${colorize('=>', 'magenta')} ${answer}`);
+        log(` Se ha cambiado el quiz ${colorize(id, 'magenta')} por: ${quiz.question} ${colorize('=>', 'magenta')} ${quiz.answer}`);
     })
     .catch(Sequelize.ValidationError, error => {
         errorlog('El quiz es erroneo:');
@@ -229,29 +229,35 @@ exports.editCmd = (rl, id) => {
  * @param id Clave del quiz a probar.
  */
 exports.testCmd = (rl, id) => {
-    // TODO usar validateId
-    if (typeof id === "undefined") {
-        errorlog(`Falta el parámetro id.`);
-    } else if (id >= model.count()) {
-        errorlog('El valor del parámetro id no es válido.');
-    } else {
-        try {
-            const quiz = model.getByIndex(id);
-            rl.question(colorize(quiz.question+'? ', 'red'), answer => {
-                if (quiz.answer.trim().toUpperCase() == answer.trim().toUpperCase()){
-                    log('Su respuesta es correcta');
-                    biglog('Correcta', 'green');
-                    rl.prompt();
-                } else {
-                    log('Su respuesta es incorrecta');
-                    biglog('Incorrecta','red');
-                    rl.prompt();
-                }
-            });
-        } catch(error) {
-            errorlog(error.message);
+    validateId(id)
+    .then(id => quizModel.findByPk(id))
+    .then(quiz => {
+        if (!quiz) {
+            throw new Error(`No existe un quiz asociado al id=${id}.`);
         }
-    }
+
+        return makeQuestion(rl, quiz.question + "? ")
+        .then(a => {
+            if (quiz.answer.trim().toUpperCase() == a.trim().toUpperCase()){
+                log('Su respuesta es correcta');
+                biglog('Correcta', 'green');
+            } else {
+                log('Su respuesta es incorrecta');
+                biglog('Incorrecta','red');
+            }
+            return;
+        });
+    })
+    .catch(Sequelize.ValidationError, error => {
+        errorlog('El quiz es erroneo:');
+        error.errors.forEach(({message}) => errorlog(message));
+    })
+    .catch(error => {
+        errorlog(error.message);
+    })
+    .then(() => {
+        rl.prompt();
+    });
 };
 
 
@@ -262,50 +268,59 @@ exports.testCmd = (rl, id) => {
  * @param rl Objeto readline usado para implementar el CLI.
  */
 exports.playCmd = rl => {
-    // TODO usar validateId
-
+    
     let array = new Array();
-    for (let i=0; i<model.count(); i++){
-        array.push(i);
-    }
+    quizModel.findAll().each(quiz => {
+        array.push(quiz.id);
+    }).then(() => {
 
-    function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [array[i], array[j]] = [array[j], array[i]];
         }
-    }
 
-    shuffleArray(array);
+        playQuiz(0);
 
+    });
+
+    
     let abort = false;
     let hits = 0;
     function playQuiz(id){
         if (id < array.length){
-            let quiz = model.getByIndex(array[id]);
-            rl.question(colorize(quiz.question+'? ', 'red'), answer => {
-                if (quiz.answer.trim().toUpperCase() == answer.trim().toUpperCase()){
-                    hits++;
-                    log('CORRECTO - Lleva ' + hits + ' aciertos.');
-                } else {
-                    abort = true;
-                    log('INCORRECTO.');
-                }
-                if (!abort && id+1<array.length){
-                    playQuiz(id+1);
-                } else {
-                    if (!abort){
-                        log('No hay nada más que preguntar.');
+            quizModel.findByPk(array[id])
+            .then(quiz =>{
+                return makeQuestion(rl, quiz.question + "? ")
+                .then(a => {
+                    if (quiz.answer.trim().toUpperCase() == a.trim().toUpperCase()){
+                        hits++;
+                        log(colorize('CORRECTO', 'green') + ' - Lleva ' + hits + ' aciertos.');
+                    } else {
+                        abort = true;
+                        log(colorize('INCORRECTO.', 'red'));
                     }
-                    log('Fin del juego. Aciertos: ' + hits);
-                    biglog(hits, 'magenta');
-                    rl.prompt();
-                }
+                    if (!abort && id+1<array.length){
+                        playQuiz(id+1);
+                    } else {
+                        if (!abort){
+                            log('No hay nada más que preguntar.');
+                        }
+                        log('Fin del juego. Aciertos: ' + hits);
+                        biglog(hits, 'magenta');
+                        rl.prompt();
+                    }
+                    return;
+                });
+            })
+            .catch(Sequelize.ValidationError, error => {
+                errorlog('El quiz es erroneo:');
+                error.errors.forEach(({message}) => errorlog(message));
+            })
+            .catch(error => {
+                errorlog(error.message);
             });
         }
     }
-    
-    playQuiz(0);
     
 };
 
